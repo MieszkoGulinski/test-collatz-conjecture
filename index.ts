@@ -1,57 +1,43 @@
-import fs from "fs";
+import fs from "node:fs";
+import os from "node:os";
 
 // Configuration constants
 
 const START_NUMBER = 2n ** 10n + 1n;
 const END_NUMBER = 2n ** 11n + 1n;
+const THREAD_COUNT = os.availableParallelism();
+const CHUNK_SIZE = 2n ** 8n; // each worker thread will send results back in chunks of this size, and the chunk will be then written to the results file
 const FILE_NAME = "results.csv";
 
-const checkConjecture = (
-  startNumber: bigint
-): [bigint, bigint, bigint, number] => {
-  const t0 = performance.now();
+// Distribute the work to multiple worker threads
 
-  let currentNumber = startNumber;
-  let iterations = 0n;
-  let max = currentNumber;
+if (START_NUMBER % 2n === 0n) {
+  throw new Error("Start number must be odd");
+}
+if (END_NUMBER % 2n === 0n) {
+  throw new Error("End number must be odd");
+}
 
-  while (currentNumber !== 1n) {
-    if (currentNumber % 2n === 0n) {
-      currentNumber /= 2n;
-      // TODO check if (currentNumber << 1n) is faster
-    } else {
-      currentNumber = 3n * currentNumber + 1n;
-      // TODO check if (currentNumber*2n) + currentNumber + 1n is faster
-    }
+const threadRange = (END_NUMBER - START_NUMBER) / BigInt(THREAD_COUNT);
+for (let i = 0; i < THREAD_COUNT; i = i + 1) {
+  const thread = new Worker("./thread.ts");
 
-    if (currentNumber > max) {
-      max = currentNumber;
-    }
+  const start = START_NUMBER + BigInt(i) * threadRange;
+  const end = start + threadRange;
 
-    iterations++;
-  }
+  thread.postMessage({
+    start,
+    end,
+    chunkSize: CHUNK_SIZE,
+  });
 
-  const t1 = performance.now();
+  thread.onmessage = (event) => {
+    const formattedChunk = event.data
+      .map((row: [bigint, bigint, bigint, number]) => {
+        return row.join(",");
+      })
+      .join("\n");
 
-  return [startNumber, iterations, max, t1 - t0];
-};
-
-// TODO distribute the work to multiple worker threads
-// TODO write the results to a file in chunks, so that we won't have overhead from writing to the file for each number
-
-// No need to check even numbers, as they will always become odd in one of the next steps. START_NUMBER must be odd.
-for (let i = START_NUMBER; i < END_NUMBER; i = i + 2n) {
-  const [start, iterations, max, timeMs] = checkConjecture(i);
-
-  fs.appendFileSync(
-    FILE_NAME,
-    start.toString() +
-      "," +
-      iterations.toString() +
-      "," +
-      max.toString() +
-      "," +
-      timeMs +
-      "\n"
-  );
+    fs.appendFileSync(FILE_NAME, formattedChunk);
+  };
 }
