@@ -32,6 +32,7 @@ const checkConjecture = (
 };
 
 self.onmessage = (event) => {
+  const threadNumber = event.data.threadNumber as number;
   const startNumber = event.data.start as bigint;
   const endNumber = event.data.end as bigint;
   const chunkSize = BigInt(event.data.chunkSize as number);
@@ -51,5 +52,6 @@ self.onmessage = (event) => {
   }
 
   // shut down the worker
+  console.log(threadNumber, "completed");
   process.exit();
 };
